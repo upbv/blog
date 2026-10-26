@@ -842,8 +842,8 @@ html.dark { background-color: transparent !important; }
                             <span class="text-[10px] text-zinc-600"><?= (int)$sf_folder['count'] ?> 个文件</span>
                         </button>
                         <?php endforeach; ?>
-                        <?php else: ?>
-                        <p class="text-xs text-zinc-600 py-2">暂无文件夹</p>
+                        <?php elseif (empty($share_files)): ?>
+                        <p class="text-xs text-zinc-600 py-2">暂无文件</p>
                         <?php endif; ?>
                     </div>
                 </div>
