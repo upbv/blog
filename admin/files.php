@@ -346,9 +346,9 @@ require '_layout.php';
       当前位于 <strong>uploads 根目录</strong>，在这里新建或上传的内容不会出现在前台。
     <?php else: ?>
       当前位于 <strong>uploads/<?= htmlspecialchars($rel, ENT_QUOTES, 'UTF-8') ?></strong> 目录，在这里新建或上传的内容不会出现在前台。
-      <a href="files.php" class="underline hover:no-underline font-medium">返回 uploads 根目录 →</a>
+      <a href="files.php" class="underline hover:no-underline font-medium">返回根目录</a>
     <?php endif; ?>
-    <a href="files.php?path=share" class="underline hover:no-underline font-medium">进入分享目录 →</a>
+    <a href="files.php?path=share" class="underline hover:no-underline font-medium">进入分享目录</a>
   </div>
 </div>
 <?php else: ?>
