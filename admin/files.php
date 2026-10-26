@@ -23,7 +23,8 @@ if (!$base_dir || $base_dir === DIRECTORY_SEPARATOR) {
 }
 $base_dir .= DIRECTORY_SEPARATOR;
 
-$rel       = trim($_GET['path'] ?? '', '/\\');
+// POST 表单也允许携带当前路径，避免表单提交时丢失 ?path=
+$rel       = trim($_GET['path'] ?? $_POST['path'] ?? '', '/\\');
 // 安全：防止路径穿越
 $target    = realpath($base_dir . $rel);
 if (!$target || strpos($target . DIRECTORY_SEPARATOR, $base_dir) !== 0) {
@@ -31,6 +32,9 @@ if (!$target || strpos($target . DIRECTORY_SEPARATOR, $base_dir) !== 0) {
     $rel    = '';
 }
 $target .= is_dir($target) ? '' : '';
+
+// 当前是否位于前台「文件分享」目录（uploads/share）内
+$in_share_dir = ($rel === 'share' || strpos($rel, 'share/') === 0);
 
 // ---- 操作处理 ----
 $msg = $err = '';
@@ -62,7 +66,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['upload'])) {
             $errors[] = basename($name) . '：' . upload_err_msg($code);
             continue;
         }
-        $safe = preg_replace('/[^\w.\-]/u', '_', basename($name));
+        // 允许中文等 Unicode 字母/数字，避免中文文件名被替换成下划线
+        $safe = preg_replace('/[^\p{L}\p{N}._\-]/u', '_', basename($name));
+        if ($safe === null || $safe === '' || $safe === '.' || $safe === '..') {
+            $safe = 'file_' . time();
+        }
         $dest = $dir . DIRECTORY_SEPARATOR . $safe;
         // 避免覆盖
         if (file_exists($dest)) {
@@ -96,12 +104,13 @@ function upload_err_msg(int $code): string {
     return $map[$code] ?? ('未知错误（code=' . $code . '）');
 }
 
-// 新建文件夹（成功静默，失败提示错误）
+// 新建文件夹（提示创建结果，并说明是否会在前台展示）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['mkdir'])) {
     $dir  = is_dir($target) ? $target : $base_dir;
-    $name = preg_replace('/[^\w\-]/u', '_', trim($_POST['mkdir']));
+    // 允许中文等 Unicode 字母/数字；空格、斜杠等仍会被替换
+    $name = preg_replace('/[^\p{L}\p{N}._\-]/u', '_', trim($_POST['mkdir']));
     $msg  = '';
-    if (!$name) {
+    if ($name === null || $name === '' || $name === '.' || $name === '..') {
         $msg = '创建失败：文件夹名不合法';
     } else {
         $np = $dir . DIRECTORY_SEPARATOR . $name;
@@ -109,6 +118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['mkdir'])) {
             $msg = '创建失败：文件夹已存在';
         } elseif (!@mkdir($np, 0755)) {
             $msg = '创建失败：无法写入目录（' . $name . '）';
+        } else {
+            $msg = $in_share_dir
+                ? '文件夹已创建，前台「文件分享」会显示它'
+                : '文件夹已创建，但它位于 uploads 根目录，前台「文件分享」不会显示';
         }
     }
     header('Location: files.php?path=' . urlencode($rel) . '&msg=' . urlencode($msg)); exit;
@@ -308,6 +321,29 @@ require '_layout.php';
 <div class="alert-success"><?= htmlspecialchars($_GET['msg']) ?></div>
 <?php endif; ?>
 
+<?php if (!$in_share_dir): ?>
+<!-- 分享目录提示：uploads 根目录下的内容不会出现在前台文件分享 -->
+<div class="mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2.5 text-[11px] leading-relaxed">
+  <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 9v2m0 4h.01M10.29 3.86l-8.2 14.2A1 1 0 003 19.5h18a1 1 0 00.86-1.5l-8.2-14.2a1 1 0 00-1.72 0z"/>
+  </svg>
+  <div class="flex-1">
+    前台「文件分享」只读取 <code class="px-1 bg-white/70 border border-amber-200">uploads/share/</code> 目录。当前位于 uploads 根目录，在这里新建或上传的内容不会出现在前台。
+    <a href="files.php?path=share" class="underline hover:no-underline font-medium">进入分享目录 →</a>
+  </div>
+</div>
+<?php else: ?>
+<div class="mb-4 flex items-start gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2.5 text-[11px] leading-relaxed">
+  <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+  </svg>
+  <div class="flex-1">
+    当前位于前台「文件分享」目录，这里新建或上传的内容会显示在主页的文件分享中。
+    <a href="files.php?path=" class="underline hover:no-underline font-medium">返回 uploads 根目录 →</a>
+  </div>
+</div>
+<?php endif; ?>
+
 <!-- 面包屑 + 操作栏 -->
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
   <nav class="flex items-center flex-wrap gap-1 text-sm">
@@ -323,6 +359,7 @@ require '_layout.php';
   <div class="flex gap-2 flex-wrap">
     <!-- 新建文件夹 -->
     <form method="POST" class="flex gap-1">
+      <input type="hidden" name="path" value="<?= htmlspecialchars($rel, ENT_QUOTES, 'UTF-8') ?>">
       <input type="text" name="mkdir" placeholder="新建文件夹" class="field text-xs py-2 w-32">
       <button type="submit" class="btn-outline text-xs py-2 px-3">创建</button>
     </form>
@@ -406,6 +443,9 @@ require '_layout.php';
             <a href="files.php?path=<?= urlencode($item['path']) ?>" class="font-medium text-zinc-800 hover:text-zinc-500 transition block truncate">
               <span class="hidden sm:inline"><?= htmlspecialchars($item['name'], ENT_QUOTES, 'UTF-8') ?></span>
               <span class="sm:hidden"><?= short_name($item['name']) ?></span>
+              <?php if ($item['path'] === 'share'): ?>
+                <span class="ml-2 inline-block align-middle text-[9px] px-1.5 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded whitespace-nowrap">前台分享</span>
+              <?php endif; ?>
             </a>
           <?php else: ?>
             <span class="text-zinc-700 block truncate">

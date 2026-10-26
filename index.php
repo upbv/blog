@@ -116,68 +116,65 @@ try {
     $friend_links = [];
 }
 
-// ---- 文件分享列表（uploads/share 目录） ----
+// ---- 文件分享列表（uploads/share 目录，递归扫描，支持任意层级子文件夹） ----
 $share_files = [];
 $share_dir   = __DIR__ . '/uploads/share';
-// 扫描一级文件夹
+// 扫描所有层级的文件夹与文件
 $share_folders = [];
 if (is_dir($share_dir)) {
-    foreach (scandir($share_dir) as $_sf) {
-        if ($_sf === '.' || $_sf === '..') continue;
-        $_sfpath = $share_dir . '/' . $_sf;
-        if (!is_dir($_sfpath)) continue;
-        // 统计文件夹内的文件数量和总大小
-        $_count = 0; $_size = 0; $_mtime = filemtime($_sfpath);
-        foreach (scandir($_sfpath) as $_ff) {
-            if ($_ff === '.' || $_ff === '..') continue;
-            $_ffpath = $_sfpath . '/' . $_ff;
-            if (!is_file($_ffpath)) continue;
-            $_count++;
-            $_size += filesize($_ffpath);
-            $_mtime = max($_mtime, filemtime($_ffpath));
-        }
-        $share_folders[] = [
-            'name'  => $_sf,
-            'count' => $_count,
-            'size'  => $_size,
-            'mtime' => $_mtime,
-        ];
-    }
-    usort($share_folders, fn($a, $b) => $b['mtime'] - $a['mtime']);
-}
-// 保留旧的 $share_files 逻辑，用于覆盖层按文件夹动态输出
-if (is_dir($share_dir)) {
-    foreach (scandir($share_dir) as $_sf) {
-        if ($_sf === '.' || $_sf === '..') continue;
-        $_sfpath = $share_dir . '/' . $_sf;
-        if (!is_file($_sfpath)) continue;
-        $share_files[] = [
-            'name'   => $_sf,
-            'folder' => '',
-            'ext'    => strtolower(pathinfo($_sf, PATHINFO_EXTENSION)),
-            'size'   => filesize($_sfpath),
-            'mtime'  => filemtime($_sfpath),
-            'url'    => './uploads/share/' . rawurlencode($_sf),
-        ];
-    }
-    // 也扫描子文件夹内的文件
-    foreach ($share_folders as $_folder) {
-        $_fpath = $share_dir . '/' . $_folder['name'];
-        foreach (scandir($_fpath) as $_ff) {
-            if ($_ff === '.' || $_ff === '..') continue;
-            $_ffpath = $_fpath . '/' . $_ff;
-            if (!is_file($_ffpath)) continue;
+    $share_dir_real = rtrim(realpath($share_dir) ?: $share_dir, '/\\');
+    $dir_stack      = ['']; // 相对 share_dir 的目录栈，'' 表示根目录
+
+    while ($dir_stack) {
+        $_dir_rel = array_pop($dir_stack);
+        $_dir_abs = $_dir_rel === '' ? $share_dir_real : $share_dir_real . '/' . $_dir_rel;
+        $_entries = @scandir($_dir_abs);
+        if ($_entries === false) continue;
+
+        foreach ($_entries as $_sf) {
+            if ($_sf === '.' || $_sf === '..') continue;
+            $_sfpath = $_dir_abs . '/' . $_sf;
+            $_sfrel  = $_dir_rel === '' ? $_sf : $_dir_rel . '/' . $_sf;
+
+            if (is_dir($_sfpath)) {
+                // 记录该层级文件夹，并继续向下扫描
+                $share_folders[] = [
+                    'name'  => $_sfrel,
+                    'count' => 0, // 稍后汇总子目录文件数
+                    'size'  => 0,
+                    'mtime' => @filemtime($_sfpath) ?: 0,
+                ];
+                $dir_stack[] = $_sfrel;
+                continue;
+            }
+            if (!is_file($_sfpath)) continue;
+
             $share_files[] = [
-                'name'   => $_ff,
-                'folder' => $_folder['name'],
-                'ext'    => strtolower(pathinfo($_ff, PATHINFO_EXTENSION)),
-                'size'   => filesize($_ffpath),
-                'mtime'  => filemtime($_ffpath),
-                'url'    => './uploads/share/' . rawurlencode($_folder['name']) . '/' . rawurlencode($_ff),
+                'name'   => $_sf,
+                'folder' => $_dir_rel,
+                'ext'    => strtolower(pathinfo($_sf, PATHINFO_EXTENSION)),
+                'size'   => filesize($_sfpath),
+                'mtime'  => filemtime($_sfpath),
+                'url'    => './uploads/share/'
+                            . implode('/', array_map('rawurlencode', explode('/', $_sfrel))),
             ];
         }
     }
-    usort($share_files, fn($a, $b) => $b['mtime'] - $a['mtime']);
+
+    // 每个文件夹统计其下所有层级文件的总数与总大小
+    foreach ($share_folders as &$_folder) {
+        foreach ($share_files as $_file) {
+            if ($_file['folder'] === $_folder['name']
+                || strpos($_file['folder'], $_folder['name'] . '/') === 0) {
+                $_folder['count']++;
+                $_folder['size'] += $_file['size'];
+            }
+        }
+    }
+    unset($_folder);
+
+    usort($share_folders, fn($a, $b) => $b['mtime'] - $a['mtime']);
+    usort($share_files,   fn($a, $b) => $b['mtime'] - $a['mtime']);
 }
 function share_fmt_size(int $bytes): string {
     if ($bytes < 1024)       return $bytes . ' B';
@@ -821,6 +818,17 @@ html.dark { background-color: transparent !important; }
                 </button>
                 <div id="nav-share-folders" class="nav-sub overflow-hidden max-h-0 transition-all duration-500 ease-in-out">
                     <div class="pt-3 pb-4 pl-1 space-y-1">
+                        <!-- 全部文件：让直接放在 uploads/share 根目录的文件也能打开 -->
+                        <button onclick="openFilesOverlay(''); document.getElementById('closeMenu').click();"
+                                class="flex items-center justify-between w-full text-left text-sm font-light text-zinc-400 hover:text-white py-2 border-b border-white/5 transition">
+                            <span class="flex items-center gap-2">
+                                <svg class="w-3.5 h-3.5 opacity-40 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                </svg>
+                                <span>全部文件</span>
+                            </span>
+                            <span class="text-[10px] text-zinc-600"><?= count($share_files) ?> 个文件</span>
+                        </button>
                         <?php if (!empty($share_folders)): ?>
                         <?php foreach ($share_folders as $sf_folder): ?>
                         <button onclick="openFilesOverlay('<?= addslashes(h($sf_folder['name'])) ?>'); document.getElementById('closeMenu').click();"
@@ -1460,14 +1468,14 @@ html.dark { background-color: transparent !important; }
                 'url'    => $_sf['url'],
             ];
         }
-        echo json_encode($js_files, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        echo json_encode($js_files, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     ?>;
     var SHARE_FOLDERS_DATA = <?php
         $js_folders = [];
         foreach ($share_folders as $_f) {
             $js_folders[] = ['name' => $_f['name'], 'count' => $_f['count'], 'size' => $_f['size']];
         }
-        echo json_encode($js_folders, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        echo json_encode($js_folders, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     ?>;
     </script>
 
