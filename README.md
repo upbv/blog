@@ -1,4 +1,3 @@
-![预览图](img/blog.png "点击转跳")
 <img align="center" src="img/blog.png" alt="封面">
 # 轻量博客系统
 
