@@ -240,16 +240,25 @@ if ($rel) {
  * 文件夹名同理但无扩展名部分
  */
 function short_name(string $name, int $max = 20, int $keep = 6): string {
-    if (mb_strlen($name) <= $max) return htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
+    // 不依赖 mbstring：用 PCRE 按 UTF-8 字符拆分，服务器未装 mbstring 时也不会 500
+    $chars = preg_split('//u', $name, -1, PREG_SPLIT_NO_EMPTY);
+    if ($chars === false) $chars = str_split($name); // 非法 UTF-8 时退回按字节处理
+    if (count($chars) <= $max) return htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
+
     $dot = strrpos($name, '.');
     if ($dot !== false && $dot > 0) {
-        $base = mb_substr($name, 0, $dot);
-        $ext  = mb_substr($name, $dot); // 含点，如 .zip
+        $base = substr($name, 0, $dot);
+        $ext  = substr($name, $dot); // 含点，如 .zip
     } else {
         $base = $name;
         $ext  = '';
     }
-    $short = mb_substr($base, 0, $keep) . '✳' . mb_substr($base, -$keep) . $ext;
+    $base_chars = preg_split('//u', $base, -1, PREG_SPLIT_NO_EMPTY);
+    if ($base_chars === false) $base_chars = str_split($base);
+    $short = implode('', array_slice($base_chars, 0, $keep))
+           . '✳'
+           . implode('', array_slice($base_chars, -$keep))
+           . $ext;
     return htmlspecialchars($short, ENT_QUOTES, 'UTF-8');
 }
 

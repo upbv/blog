@@ -8,6 +8,18 @@
 // =========================================
 require_once __DIR__ . '/../includes/db.php';
 
+// 兼容未安装 mbstring 的服务器（本接口只用到大小写和子串查找）
+if (!function_exists('mb_strtolower')) {
+    function mb_strtolower(string $str, ?string $encoding = null): string {
+        return strtolower($str);
+    }
+}
+if (!function_exists('mb_strpos')) {
+    function mb_strpos(string $haystack, string $needle, int $offset = 0, ?string $encoding = null) {
+        return strpos($haystack, $needle, $offset);
+    }
+}
+
 $pdo = db();
 
 // ---- 单篇文章 ----
