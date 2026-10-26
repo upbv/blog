@@ -119,9 +119,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['mkdir'])) {
         } elseif (!@mkdir($np, 0755)) {
             $msg = '创建失败：无法写入目录（' . $name . '）';
         } else {
-            $msg = $in_share_dir
-                ? '文件夹已创建，前台「文件分享」会显示它'
-                : '文件夹已创建，但它位于 uploads 根目录，前台「文件分享」不会显示';
+            if ($in_share_dir) {
+                $msg = '文件夹已创建，前台「文件分享」会显示它';
+            } elseif ($rel === '') {
+                $msg = '文件夹已创建，但它位于 uploads 根目录，前台「文件分享」不会显示';
+            } else {
+                $msg = '文件夹已创建（位于 uploads/' . $rel . '，前台「文件分享」不会显示）';
+            }
         }
     }
     header('Location: files.php?path=' . urlencode($rel) . '&msg=' . urlencode($msg)); exit;
@@ -328,7 +332,13 @@ require '_layout.php';
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 9v2m0 4h.01M10.29 3.86l-8.2 14.2A1 1 0 003 19.5h18a1 1 0 00.86-1.5l-8.2-14.2a1 1 0 00-1.72 0z"/>
   </svg>
   <div class="flex-1">
-    前台「文件分享」只读取 <code class="px-1 bg-white/70 border border-amber-200">uploads/share/</code> 目录。当前位于 uploads 根目录，在这里新建或上传的内容不会出现在前台。
+    前台「文件分享」只读取 <code class="px-1 bg-white/70 border border-amber-200">uploads/share/</code> 目录。
+    <?php if ($rel === ''): ?>
+      当前位于 <strong>uploads 根目录</strong>，在这里新建或上传的内容不会出现在前台。
+    <?php else: ?>
+      当前位于 <strong>uploads/<?= htmlspecialchars($rel, ENT_QUOTES, 'UTF-8') ?></strong> 目录，在这里新建或上传的内容不会出现在前台。
+      <a href="files.php" class="underline hover:no-underline font-medium">返回 uploads 根目录 →</a>
+    <?php endif; ?>
     <a href="files.php?path=share" class="underline hover:no-underline font-medium">进入分享目录 →</a>
   </div>
 </div>
