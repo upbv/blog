@@ -1,4 +1,4 @@
-<img align="center" src="img/blog.png" alt="封面" size=""320px>
+<img align="center" src="img/blog.png" alt="封面" size="320px">
 # 轻量博客系统
 
 一个基于 PHP + MySQL 构建的轻量级个人博客，支持文章管理、专题系列、文件分享、音乐播放器、友链申请等功能，前端无需构建工具，开箱即用。
